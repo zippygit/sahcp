@@ -1,5 +1,7 @@
 // Copyright (c) 2014 Argonne National Laboratory. All rights reserved.
 
+// cd /projects/catalyst/zippy/hcp/mpi/ ; mpic++11 -g -i8 -O3 -ffast-math -o xm2rchcp m2rchcp.cpp
+
 // MPI version with two levels of parallelism (trials and permutations)
 // This one repeats the annealing schedule with same setup but different RN
 // sequence when the moves and annealing start.
@@ -880,13 +882,14 @@ bool hcp( HCPGraph& g_, HCPParameters& config_, ostream& outy_, int trial_, MPI_
  
   // To re-try failures:
   int seed2, nAttempts = 1;
+  int seedForMetropolis = trial_; // equivalent to original
   if ( retry ) { nAttempts = 2; }
   for ( int attempt = 0; attempt < nAttempts; attempt++ ) {
     tour = copyOfTour;
     newTour = tour;
     if ( attempt == 0 ) {
-      re.seed( trial_ );
-      // cout << "debug rank " << myRank << ":: Trial " << trial_ << " with seed= " << trial_ << endl;
+      re.seed( seedForMetropolis );
+      // cout << "debug rank " << myRank << ":: Trial " << trial_ << " with seed= " << seedForMetropolis << endl;
     } else {
       currentCost = costFunction( g_, tour, false );
       seed2 = trial_ * 637 + 2929;
@@ -919,7 +922,15 @@ bool hcp( HCPGraph& g_, HCPParameters& config_, ostream& outy_, int trial_, MPI_
         move( tour, newTour, permutation, n, pickNodes, pickNodesGen );
         cost = costFunction( g_, newTour, false );
         double deltaCost = cost - currentCost;
+        //zippydebug
+        // if ( ( myPermRank == 0 ) && ( permutation = myFirstPerm + 1 ) ) {
+        //   cout << "DEBUG myPermRank=" << myPermRank << " myRank=" << myRank << " myFirstPerm="
+        //        << myFirstPerm << " permutation=" << permutation << "deltaCost=" << deltaCost
+        //        << " tour=" << tour << " ; newTour=" << newTour << endl;
+        // }
+        //zippydebug
         if ( deltaCost <= 0.0 ) {
+        //zippydebug tried this if ( deltaCost < 0.0 ) { //zippydebug try this
           if ( deltaCost == 0.0 ) {
             zeroDeltas += 1;
           }
@@ -934,6 +945,8 @@ bool hcp( HCPGraph& g_, HCPParameters& config_, ostream& outy_, int trial_, MPI_
               tour = newTour;
               currentCost = cost;
             }
+          } else {
+            // cout << "DEBUG rank " << myRank << "cost=" << cost << endl;
           }
         }
       }
