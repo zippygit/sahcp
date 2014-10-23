@@ -102,7 +102,7 @@ public:
         if ( !hasEdge( startNode, endNode ) && ( edgesAdded < nEdges_ ) ) {
           addEdge( startNode, endNode, weight_ );
           edgesAdded += 1;
-          if ( myRank_ == 0 ) cout << "rank0 anre(): addEdge(" << startNode << "," << endNode << ",w=" << weight_ << ")" << endl;
+          // if ( myRank_ == 0 ) cout << "rank0 anre(): addEdge(" << startNode << "," << endNode << ",w=" << weight_ << ")" << endl;
         }
       }
     }
@@ -121,6 +121,10 @@ public:
     // random_shuffle( &tour[ 0 ], &tour[ N_m ] );
     std::mt19937 shuffleGen( cycleSeed_ );
     shuffle( &tour[ 0 ], &tour[ N_m ], shuffleGen );
+    // if ( myRank_ == 92 ) {
+    //   cout << "DEBUG92: rank " << myRank_ << " cycleSeed_=" << cycleSeed_ << " tour = "
+    //        << tour << endl;
+    // }
 
     for ( int ii = 0; ii < N_m - 1; ii++ ) {
       addEdge( tour[ii], tour[ ii + 1 ], 0.0 );
@@ -193,12 +197,13 @@ public:
   HCPParameters( string fileName_, int nMultipliers_, double minMultiplier_, double maxMultiplier_, 
                  int nTrials_, int firstTrial_, double nFakeEdgesMultiplier_, double fakeEdgeWeight_, 
                  double tFactor_, double t0_, int naSteps_, double kMultiplier_, int maxPermMultiplier_, 
-                 bool retry_, bool randomEdges_ )
+                 bool retry_, bool randomEdges_, bool insertRandomCycle_ )
     : fileName( fileName_ ), nMultipliers( nMultipliers_ ), minMultiplier( minMultiplier_ ), 
       maxMultiplier( maxMultiplier_ ), nTrials( nTrials_ ), firstTrial( firstTrial_ ), 
       nFakeEdgesMultiplier( nFakeEdgesMultiplier_ ), fakeEdgeWeight( fakeEdgeWeight_ ), 
       tFactor( tFactor_ ), t0( t0_ ), naSteps( naSteps_ ), kMultiplier( kMultiplier_ ), 
-      maxPermMultiplier( maxPermMultiplier_ ), retry( retry_ ), randomEdges( randomEdges_ ) { }
+      maxPermMultiplier( maxPermMultiplier_ ), retry( retry_ ), randomEdges( randomEdges_ ),
+      insertRandomCycle( insertRandomCycle_ ) { }
 
   void parseInput()
     {
@@ -243,6 +248,8 @@ public:
           cout << "streamed ssValue into retry, now retry = " << retry << endl;
         } else if ( key == "randomEdges" ) {
           ssValue >> randomEdges;
+        } else if ( key == "insertRandomCycle" ) {
+          ssValue >> insertRandomCycle;
         }
       }
     }
@@ -256,7 +263,7 @@ public:
        << " fakeEdgeWeight=" << fakeEdgeWeight << " tFactor=" << tFactor << " t0=" << t0
        << " naSteps=" << naSteps << " kMultiplier=" << kMultiplier
        << " maxPermMultiplier=" << maxPermMultiplier << " retry=" << retry
-       << " randomEdges=" << randomEdges;
+       << " randomEdges=" << randomEdges << " insertRandomCycle=" << insertRandomCycle;
     return ss.str();
   }
 
@@ -283,6 +290,7 @@ public:
       ar & maxPermMultiplier;
       ar & retry;
       ar & randomEdges;
+      ar & insertRandomCycle;
     }
 #endif
 
@@ -290,8 +298,8 @@ public:
   int nMultipliers;
   double minMultiplier;
   double maxMultiplier;
-  int nTrials;
-  int firstTrial;
+  int nTrials = 1;
+  int firstTrial = 0;
   double nFakeEdgesMultiplier;
   double fakeEdgeWeight;
   double tFactor;
@@ -299,8 +307,9 @@ public:
   int naSteps;
   double kMultiplier;
   int maxPermMultiplier;
-  bool retry;
-  bool randomEdges;
+  bool retry = false;
+  bool randomEdges = true;
+  bool insertRandomCycle = true;
 };
 
 double costFunction( HCPGraph& g_, Tour_t& tour_, bool debug_ )
@@ -467,6 +476,7 @@ void sweep( int N_, string& inputFileName_ )
   int naSteps;
   double kMultiplier = 99.0;
   bool randomEdges = 1;
+  bool insertRandomCycle = 1;
 
   ostream* outyPtr;
 
@@ -567,6 +577,7 @@ void sweep( int N_, string& inputFileName_ )
     kMultiplier = config.kMultiplier;
     retry = config.retry;
     randomEdges = config.randomEdges;
+    insertRandomCycle = config.insertRandomCycle;
 
     MPI_Bcast( &nMultipliers, 1, MPI_INT, 0, MPI_COMM_WORLD );
     MPI_Bcast( &minMultiplier, 1, MPI_DOUBLE, 0, MPI_COMM_WORLD );
@@ -588,6 +599,9 @@ void sweep( int N_, string& inputFileName_ )
     if ( !randomEdges ) { randomEdgesInt = 0; }
     MPI_Bcast( &randomEdgesInt, 1, MPI_INT, 0, MPI_COMM_WORLD );
     // cout << "rank 0 randomEdges=" << randomEdges << " randomEdgesInt=" << randomEdgesInt << endl;
+    int insertRandomCycleInt = 1;
+    if ( !insertRandomCycle ) { insertRandomCycleInt = 0; }
+    MPI_Bcast( &insertRandomCycleInt, 1, MPI_INT, 0, MPI_COMM_WORLD );
   }
   else
   {
@@ -613,11 +627,14 @@ void sweep( int N_, string& inputFileName_ )
     int randomEdgesInt = 1;
     MPI_Bcast( &randomEdgesInt, 1, MPI_INT, 0, MPI_COMM_WORLD );
     if ( randomEdgesInt == 0 ) { randomEdges = false; }
+    int insertRandomCycleInt = 1;
+    MPI_Bcast( &insertRandomCycleInt, 1, MPI_INT, 0, MPI_COMM_WORLD );
+    if ( insertRandomCycleInt == 0 ) { insertRandomCycle = false; }
     // cout << "rank nonzero randomEdges=" << randomEdges << " randomEdgesInt=" << randomEdgesInt << endl;
 
     configPtr = new HCPParameters( inputFileName_, nMultipliers, minMultiplier, maxMultiplier, nTrials,
                                    firstTrial, nFakeEdgesMultiplier, fakeEdgeWeight, tFactor, t0, naSteps,
-                                   kMultiplier, maxPermMultiplier, retry, randomEdges );
+                                   kMultiplier, maxPermMultiplier, retry, randomEdges, insertRandomCycle );
   }
 #endif
   mpiError = MPI_Barrier( MPI_COMM_WORLD );
@@ -652,8 +669,17 @@ void sweep( int N_, string& inputFileName_ )
     randomGraphSeed *= 2;
     // outy << "rank " << myRank << ":: debug: before tour insert, g.nEdges() = " << g.nEdges() << " g = "
     //      << g.toString() << endl;
-    g.insertCycle( randomGraphSeed, myRank );
-    outy << "debug: after tour insert, g.nEdges() = " << g.nEdges() << endl;
+    if ( insertRandomCycle ) {
+      g.insertCycle( randomGraphSeed, myRank );
+      if ( myRank == 0 ) {
+        outy << "debug: after tour insert, g.nEdges() = " << g.nEdges() << endl;
+      }
+    } else {
+      // This hack makes the checkCycle code still work when there's no actual cycle inserted:
+      Tour_t bogusTour( N_ );
+      for ( int nn = 0; nn < N_; nn++ ) { bogusTour[ nn ] = 0; }
+      if ( myRank == 0 ) { cout << "debug rank " << myRank << ":: inserted cycle = " << bogusTour; }
+    }
 
     if ( nFakeEdgesMultiplier > 0.0 ) { nFakeEdges = int( nFakeEdgesMultiplier * NLogN ); }
     if ( myRank == 0 ) {
@@ -731,8 +757,10 @@ void sweep( int N_, string& inputFileName_ )
     mpiError = MPI_Barrier( MPI_COMM_WORLD );
     time( &endPointM );
     double cpuTimeSeconds = difftime( endPointM, startPointM );
-    outy << "rank " << myRank << ":: M=" << M << " multiplier=" << multiplier << " cyclesFound = "
-         << cyclesFound <<  " cpuTime =" <<  cpuTimeSeconds << endl;
+    if ( myTrialRank == 0 ) {
+      outy << "rank " << myRank << ":: M=" << M << " multiplier=" << multiplier << " cyclesFound = "
+           << cyclesFound <<  " cpuTime =" <<  cpuTimeSeconds << endl;
+    }
   }
 
   mpiError = MPI_Barrier( MPI_COMM_WORLD );
@@ -801,14 +829,21 @@ bool hcp( HCPGraph& g_, HCPParameters& config_, ostream& outy_, int trial_, MPI_
   double k = kMultiplier * maxPermutations; // Boltzmann-like constant in exponential
   bool retry = config_.retry;
   bool randomEdges = config_.randomEdges;
+  bool insertRandomCycle = config_.insertRandomCycle;
 
   Tour_t tour( n );
   for ( int nn = 0; nn < n; nn++ ) { tour[ nn ] = nn; }
 
-  int seedForShuffle = trial_ * 942;
-  std::mt19937 shuffleGen( trial_ );
+  //wasButUnused20141011int seedForShuffle = trial_ * 942;
+  //trouble20141011 std::mt19937 shuffleGen( trial_ );
+  int seedForShuffle = trial_ * 99942 + 77742;
+  std::mt19937 shuffleGen( seedForShuffle );
   shuffle( &tour[ 0 ], &tour[ n ], shuffleGen );
   // cout << "debug rank " << myRank << ":: Trial " << trial_ << " initial tour=" << tour << endl;
+  // if ( myRank == 92 ) {
+  //   cout << "DEBUG92: rank " << myRank << " seed=" << seedForShuffle << " initial tour = "
+  //        << tour << endl;
+  // }
 
   // Try eliminating modulo and rand() in moves functions
   minstd_rand pickNodesGen( trial_ + 3377 * myPermRank ); // ???RIGHT?
@@ -816,8 +851,10 @@ bool hcp( HCPGraph& g_, HCPParameters& config_, ostream& outy_, int trial_, MPI_
 
   double currentCost = costFunction( g_, tour, false );
   if ( currentCost == 0.0 ) {
-    cout << "rank " << myRank << ":: currentCost == 0.0 upon entry to hcp()" << endl;
-    windUp( true, tour, 0, t0, 0, outy_, trial_, g_ ); //zippy:added g_ for debugging
+    if ( myPermRank == 0 ) {
+      cout << "rank " << myRank << ":: currentCost == 0.0 upon entry to hcp()" << endl;
+      windUp( true, tour, 0, t0, 0, outy_, trial_, g_ ); //zippy:added g_ for debugging
+    }
     return true;
   }
   Tour_t newTour( n );
@@ -834,12 +871,12 @@ bool hcp( HCPGraph& g_, HCPParameters& config_, ostream& outy_, int trial_, MPI_
   int myNPerms = maxPermutations / nRanksPerTrial;
   int myFirstPerm = myPermRank * myNPerms;
   int myLastPerm = myFirstPerm + myNPerms;
-  for ( int serializedRank = 0; serializedRank < nRanks; serializedRank++ ) {
-    if ( myRank == serializedRank ) {
-      cout << "debug rank " << myRank << " myPermRank=" << myPermRank << ":: myFirstPerm=" << myFirstPerm
-           << " myLastPerm=" << myLastPerm << "myFirstPerm+myLastPerm=" << (myFirstPerm+myLastPerm) << endl;
-    }
-  }
+  // for ( int serializedRank = 0; serializedRank < nRanks; serializedRank++ ) {
+  //   if ( myRank == serializedRank ) {
+  //     cout << "debug rank " << myRank << " myPermRank=" << myPermRank << ":: myFirstPerm=" << myFirstPerm
+  //          << " myLastPerm=" << myLastPerm << "myFirstPerm+myLastPerm=" << (myFirstPerm+myLastPerm) << endl;
+  //   }
+  // }
  
   // To re-try failures:
   int seed2, nAttempts = 1;
@@ -902,36 +939,14 @@ bool hcp( HCPGraph& g_, HCPParameters& config_, ostream& outy_, int trial_, MPI_
       }
       mpiError = MPI_Barrier( trialComm_ );
 
-      //debug:
-      double minCurrentCost = -1.0;
-      if ( ( step == 41 ) && ( ( myRank % 128 ) == 0 ) ) {
-        cout << "debug step41 rank " << myRank << ", myPermRank " << myPermRank << ":: cost = " << std::fixed << std::setprecision(1) << cost << " currentCost = " << currentCost << endl;
-        cout.unsetf(std::ios_base::floatfield);
-      }
-      mpiError = MPI_Allreduce( &currentCost, &minCurrentCost, 1, MPI_DOUBLE, MPI_MIN, trialComm_ );
-      if ( myRank == 0 ) {
-        cout << "debug rank " << myRank << ":: currentCost = " << std::fixed << std::setprecision(1)
-             << currentCost << " ; minCurrentCost = " << minCurrentCost << endl;
-        cout.unsetf(std::ios_base::floatfield);
-      }
-      //debug.
-
       // Find the minimum-cost of all the ranks' tours and reset all to that:
       inS[0].d = currentCost;
       double costHere = currentCost;
       mpiError = MPI_Allreduce( inS, outS, 1, MPI_DOUBLE_INT, MPI_MINLOC, trialComm_ );
       currentCost = outS[0].d;
       cost = currentCost;
-      // if ( myRank == 0 ) {
-      if ( ( step == 41 ) && ( ( myRank % 128 ) == 0 ) ) {
-        cout << "debug rank " << myRank << ", myPermRank " << myPermRank << ":: cost = currentCost = " << std::fixed << std::setprecision(1) << cost << " costHere = " << costHere << " inS[0]={" << inS[0].i << "," << inS[0].d << "}" << " outS[0]={" << outS[0].i << "," << outS[0].d << "}" << endl;
-        cout.unsetf(std::ios_base::floatfield);
-      }
       newTour = tour; //zippy: maybe this will fix the bug...
-      if ( ( step == 41 ) && ( ( myRank % 256 ) == 0 ) ) { cout << "AllOfThem: permRank " << myPermRank << " , rank " << myRank << " , debug: Ann step: 41:  newTour = " << newTour << " cost(newTour)=" << costFunction( g_, newTour, false ) << endl; }
-      if ( ( step == 41 ) && ( myPermRank == outS[0].i ) ) { cout << "permRank " << myPermRank << " , rank " << myRank << " , debug: Ann step: 41:  newTour = " << newTour << " cost(newTour)=" << costFunction( g_, newTour, false ) << endl; }
       mpiError = MPI_Bcast( &newTour[0], n, MPI_INT, outS[0].i, trialComm_ );
-      if ( myRank == 0 ) { cout << "rank 0 debug: Ann step: "<< step << " outS[0].i=" << outS[0].i << " newTour = " << newTour << endl; }
       tour = newTour;
       if ( cost == 0.0 ) {
         int totalAcceptedBads = 0;
@@ -954,8 +969,8 @@ bool hcp( HCPGraph& g_, HCPParameters& config_, ostream& outy_, int trial_, MPI_
   } // to re-try failures.
 
   if ( myPermRank == 0 ) {
-      cout << "rank " << myRank << ":: trial " << trial_ <<  " Found no HC <<  currentCost =" <<  currentCost << endl;
-      outy_ << "rank " << myRank << ":: trial " << trial_ <<  " Found no HC <<  currentCost =" <<  currentCost << endl;
+      cout << "rank " << myRank << ":: trial " << trial_ <<  " Found no HC <<  currentCost =" << std::fixed << std::setprecision(1) << currentCost << endl;
+      outy_ << "rank " << myRank << ":: trial " << trial_ <<  " Found no HC <<  currentCost =" << std::fixed << std::setprecision(1) << currentCost << endl;
     }
   // cout << "rank " << myRank << ":: tour = " << tour << endl;
   return false;
