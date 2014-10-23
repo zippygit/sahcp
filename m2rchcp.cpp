@@ -894,8 +894,6 @@ bool hcp( HCPGraph& g_, HCPParameters& config_, ostream& outy_, int trial_, MPI_
       currentCost = costFunction( g_, tour, false );
       seed2 = trial_ * 637 + 2929;
       re.seed( seed2 );
-      // cout << "debug rank " << myRank << ":: Re-attempting Trial " << trial_ << " with new seed="
-      //      << seed2 << endl;
       cout << "rank " << myRank << ":: Re-attempting Trial " << trial_ << " with new seed=" << seed2 << endl;
     }
 
