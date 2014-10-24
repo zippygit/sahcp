@@ -135,6 +135,28 @@ public:
     if ( myRank_ == 0 ) { cout << "debug rank " << myRank_ << ":: inserted cycle = " << tour; }
   }
 
+  void writeNRandomEdges( int seed_, std::ostream& outy_, int myRank_ )
+  {
+    std::seed_seq seq{1 + seed_, 2 + seed_, 3 + seed_, 4 + seed_, 5 + seed_, N_m + seed_ };
+    std::mt19937 gen(seq);
+    std::uniform_int_distribution<> dis( 0, N_m - 1 );
+
+    // ??? how to do this?
+    // int startNode, endNode;
+    // bool acceptedEdge;
+    // for ( int edge = 0; edge < N_m; edge++ ) {
+    //   acceptedEdge = false;
+    //   while ( !acceptedEdge ) {
+    //     startNode = dis( gen );
+    //     do { endNode = dis( gen ); } while ( endNode == startNode );
+    //     if ( hasEdge( startNode, endNode ) ) {
+    //       cout << "rank " << myRank_ << ":: N random edges - "
+    //       acceptedEdge = true;
+    //     }
+    //   }
+    // }
+  }
+
   void insertFakeEdges( int nFakeEdges_, double fakeEdgeWeight_, int randomGraphSeed_ )
   {
     int seedForFakes = ( randomGraphSeed_ + 1 ) * 2;
@@ -417,19 +439,22 @@ void swap( Tour_t& tour_, Tour_t& newTour_, int L_,
   return;
 }
 
-void move( Tour_t& tour_, Tour_t& newTour_, long int permutation_, int L_,
-           uniform_int_distribution<int>& pickNodes_, minstd_rand& pickNodesGen_ )
+int move( Tour_t& tour_, Tour_t& newTour_, long int permutation_, int L_,
+          uniform_int_distribution<int>& pickNodes_, minstd_rand& pickNodesGen_ )
 {
   if ( ( permutation_ % 2 ) == 0 ) {
     lkTransport( tour_, newTour_, L_, pickNodes_, pickNodesGen_ );
+    return 1;
   } else {
     swap( tour_, newTour_, L_, pickNodes_, pickNodesGen_ );
+    return 2;
   }
   // if ( permutation_ & 1 ) {
   //   swap( tour_, newTour_, L_, pickNodes_, pickNodesGen_ );
   // } else {
   //   lkTransport( tour_, newTour_, L_, pickNodes_, pickNodesGen_ );
   // }
+  return 3;
 }
 
 void windUp( bool foundHC_, Tour_t& tour_, int step_, double t_, int permutation_, std::ostream& outy_, int trial_,
@@ -683,6 +708,9 @@ void sweep( int N_, string& inputFileName_ )
       if ( myRank == 0 ) { cout << "debug rank " << myRank << ":: inserted cycle = " << bogusTour; }
     }
 
+    // int nRandomEdgesSeed = randomGraphSeed + 222333444555;
+    // g.writeNRandomEdges( nRandomEdgesSeed, outy, myRank );
+
     if ( nFakeEdgesMultiplier > 0.0 ) { nFakeEdges = int( nFakeEdgesMultiplier * NLogN ); }
     if ( myRank == 0 ) {
       cout << "nFakeEdges =" << nFakeEdges << endl;
@@ -867,7 +895,9 @@ bool hcp( HCPGraph& g_, HCPParameters& config_, ostream& outy_, int trial_, MPI_
   // C++11:
   double lowerBound = 0.0, upperBound = 1.0;
   uniform_real_distribution<double> unif( lowerBound, upperBound );
-  default_random_engine re;
+  //zippytrybetter default_random_engine re
+  std::random_device rand_dev; // try this for seeding
+  std::mt19937 re( rand_dev() );
 
   // Manage multiple ranks in this trial:
   int myNPerms = maxPermutations / nRanksPerTrial;
@@ -907,7 +937,9 @@ bool hcp( HCPGraph& g_, HCPParameters& config_, ostream& outy_, int trial_, MPI_
     // declare out here for 2-way parallelism:
     double cost;
     int permutation;
-
+    int moveType;
+    //zippydebug cout << "DEBUG: rank " << myRank << " myPermRank " << myPermRank << " nRanksPerTrial=" << nRanksPerTrial << " myNPerms=" << myNPerms << " myFirstPerm=" << myFirstPerm << " myLastPerm=" << myLastPerm << endl;
+    mpiError = MPI_Barrier( MPI_COMM_WORLD ); //zippydebug
     for ( int step = 1; step <= naSteps; step++ ) {
       if ( myRank == 0 ) {
         cout << "debug rank " << myRank << ":: Trial " << trial_<< std::fixed << std::setprecision(1)
@@ -917,9 +949,14 @@ bool hcp( HCPGraph& g_, HCPParameters& config_, ostream& outy_, int trial_, MPI_
       }
       for ( permutation = myFirstPerm; permutation < myLastPerm; permutation++ ) {
         newTour = tour;
-        move( tour, newTour, permutation, n, pickNodes, pickNodesGen );
+        moveType = move( tour, newTour, permutation, n, pickNodes, pickNodesGen );
         cost = costFunction( g_, newTour, false );
         double deltaCost = cost - currentCost;
+        if ( ( myRank == 0 ) && ( step == 100 ) && ( currentCost == 1.0 ) ) { //zippydebug
+          cout << "DEBUG: cost=1.0 rank " << myRank << " myPermRank " << myPermRank << " moveType=" << moveType
+               << " tour=" << tour << " newTour=" << newTour << endl;
+        }
+        //zippydebug cout << "DEBUG: rank " << myRank << " step=" << step << " permutation=" << permutation << " deltaCost=" << std::fixed << std::setprecision(1) << deltaCost << " cost=" << cost << " currentCost=" << currentCost << endl;
         //zippydebug
         // if ( ( myPermRank == 0 ) && ( permutation = myFirstPerm + 1 ) ) {
         //   cout << "DEBUG myPermRank=" << myPermRank << " myRank=" << myRank << " myFirstPerm="
@@ -932,6 +969,10 @@ bool hcp( HCPGraph& g_, HCPParameters& config_, ostream& outy_, int trial_, MPI_
           if ( deltaCost == 0.0 ) {
             zeroDeltas += 1;
           }
+          if ( ( myRank == 0 ) && ( step == 100 ) && ( currentCost == 1.0 ) ) { //zippydebug
+            cout << "DEBUG: cost=1.0 dc<=0 rank " << myRank << " myPermRank " << myPermRank << " moveType="
+                 << moveType  << " deltaCost="<< deltaCost << endl;
+          }
           tour = newTour;
           currentCost = cost;
         } else {
@@ -942,6 +983,11 @@ bool hcp( HCPGraph& g_, HCPParameters& config_, ostream& outy_, int trial_, MPI_
               acceptedBads += 1;
               tour = newTour;
               currentCost = cost;
+            }
+            if ( ( myRank == 0 ) && ( step == 100 ) && ( currentCost == 1.0 ) ) { //zippydebug
+              cout << "DEBUG: cost=1.0 dc>0 rank " << myRank << " myPermRank " << myPermRank << " moveType="
+                   << moveType << std::scientific << std::setprecision(8) << " diceRoll=" << diceRoll << " threshold=" << threshold << " deltaCost="
+                   << deltaCost << endl;
             }
           } else {
             // cout << "DEBUG rank " << myRank << "cost=" << cost << endl;
