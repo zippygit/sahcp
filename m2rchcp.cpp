@@ -681,6 +681,7 @@ void sweep( int N_, string& inputFileName_ )
     time( &startPointM );
     double multiplier = minMultiplier + m * deltaMultiplier;
     int M = int( multiplier * NLogN );
+    // if ( ( M % 2 ) == 0 ) { M++; } //zippy try always odd.
     // int randomGraphSeed = multiplier;
     int randomGraphSeed = M;
     HCPGraph g( N_ );
@@ -736,9 +737,6 @@ void sweep( int N_, string& inputFileName_ )
     MPI_Comm trialComm;
     int color = myRank % nTrials;
     int key = myRank / nTrials;
-    if ( myRank == 256 ) {
-      cerr << "myRank = " << myRank << " color = " << color << " key = " << key << endl;
-    }
     MPI_Barrier( MPI_COMM_WORLD );
     mpiError = MPI_Comm_split( MPI_COMM_WORLD, color, key, &trialComm );
     int nRanksPerTrialTest = 0, myTrialRank = 0;
@@ -748,6 +746,15 @@ void sweep( int N_, string& inputFileName_ )
       cerr << "Error in configuration. nRanksPerTrialTest=" << nRanksPerTrialTest
            << " but nRanksPerTrial=" << nRanksPerTrial << endl;
       MPI_Abort( MPI_COMM_WORLD, 3737 );
+    }
+    for ( int rank = 0; rank < nRanks; rank++ ) {
+      if ( myRank == rank ) {
+        if ( ( myRank % 64 ) == 0 ) {
+          cerr << "debug: myRank = " << myRank << " color = " << color << " key = " << key << " myTrialRank = " << myTrialRank
+               << " nRanksPerTrial = " << nRanksPerTrial << endl;
+        }
+      }
+      mpiError = MPI_Barrier( MPI_COMM_WORLD );
     }
     bool die = false;
     for ( int rnk = 0; rnk < nRanks; rnk++ ) {
@@ -869,7 +876,9 @@ bool hcp( HCPGraph& g_, HCPParameters& config_, ostream& outy_, int trial_, MPI_
   int seedForShuffle = trial_ * 99942 + 77742;
   std::mt19937 shuffleGen( seedForShuffle );
   shuffle( &tour[ 0 ], &tour[ n ], shuffleGen );
-  // cout << "debug rank " << myRank << ":: Trial " << trial_ << " initial tour=" << tour << endl;
+  if ( myRank == 0 ) {
+    cout << "debug rank " << myRank << ":: Trial " << trial_ << " initial tour=" << tour << endl;
+  }
   // if ( myRank == 92 ) {
   //   cout << "DEBUG92: rank " << myRank << " seed=" << seedForShuffle << " initial tour = "
   //        << tour << endl;
@@ -919,7 +928,6 @@ bool hcp( HCPGraph& g_, HCPParameters& config_, ostream& outy_, int trial_, MPI_
     newTour = tour;
     if ( attempt == 0 ) {
       re.seed( seedForMetropolis );
-      // cout << "debug rank " << myRank << ":: Trial " << trial_ << " with seed= " << seedForMetropolis << endl;
     } else {
       currentCost = costFunction( g_, tour, false );
       seed2 = trial_ * 637 + 2929;
@@ -938,6 +946,7 @@ bool hcp( HCPGraph& g_, HCPParameters& config_, ostream& outy_, int trial_, MPI_
     double cost;
     int permutation;
     int moveType;
+    double deltaCost = 0.0;
     //zippydebug cout << "DEBUG: rank " << myRank << " myPermRank " << myPermRank << " nRanksPerTrial=" << nRanksPerTrial << " myNPerms=" << myNPerms << " myFirstPerm=" << myFirstPerm << " myLastPerm=" << myLastPerm << endl;
     mpiError = MPI_Barrier( MPI_COMM_WORLD ); //zippydebug
     for ( int step = 1; step <= naSteps; step++ ) {
@@ -947,50 +956,34 @@ bool hcp( HCPGraph& g_, HCPParameters& config_, ostream& outy_, int trial_, MPI_
              << " Attempt " << attempt << " Annealing step: " << step << endl;
         cout.unsetf(std::ios_base::floatfield);
       }
-      for ( permutation = myFirstPerm; permutation < myLastPerm; permutation++ ) {
+      bool foundHC = false;
+      for ( permutation = myFirstPerm; ( ( permutation < myLastPerm ) && !foundHC ); permutation++ ) {
         newTour = tour;
         moveType = move( tour, newTour, permutation, n, pickNodes, pickNodesGen );
         cost = costFunction( g_, newTour, false );
-        double deltaCost = cost - currentCost;
-        if ( ( myRank == 0 ) && ( step == 100 ) && ( currentCost == 1.0 ) ) { //zippydebug
-          cout << "DEBUG: cost=1.0 rank " << myRank << " myPermRank " << myPermRank << " moveType=" << moveType
-               << " tour=" << tour << " newTour=" << newTour << endl;
-        }
-        //zippydebug cout << "DEBUG: rank " << myRank << " step=" << step << " permutation=" << permutation << " deltaCost=" << std::fixed << std::setprecision(1) << deltaCost << " cost=" << cost << " currentCost=" << currentCost << endl;
-        //zippydebug
-        // if ( ( myPermRank == 0 ) && ( permutation = myFirstPerm + 1 ) ) {
-        //   cout << "DEBUG myPermRank=" << myPermRank << " myRank=" << myRank << " myFirstPerm="
-        //        << myFirstPerm << " permutation=" << permutation << "deltaCost=" << deltaCost
-        //        << " tour=" << tour << " ; newTour=" << newTour << endl;
-        // }
-        //zippydebug
-        if ( deltaCost <= 0.0 ) {
-        //zippydebug tried this if ( deltaCost < 0.0 ) { //zippydebug try this
-          if ( deltaCost == 0.0 ) {
-            zeroDeltas += 1;
-          }
-          if ( ( myRank == 0 ) && ( step == 100 ) && ( currentCost == 1.0 ) ) { //zippydebug
-            cout << "DEBUG: cost=1.0 dc<=0 rank " << myRank << " myPermRank " << myPermRank << " moveType="
-                 << moveType  << " deltaCost="<< deltaCost << endl;
-          }
-          tour = newTour;
+        if ( cost == 0.0 ) { 
+          cout << "DEBUG: found cost=0 myRank=" << myRank << " trial_=" << trial_ << endl;
+          foundHC = true;
           currentCost = cost;
+          tour = newTour;
         } else {
-          if ( cost > 0.0 ) { //addedFor2WayPar
-            double diceRoll = unif( re );
-            double threshold = exp( -fabs( deltaCost )/( kMultiplier * t ) );
-            if ( diceRoll < threshold ) {
-              acceptedBads += 1;
-              tour = newTour;
-              currentCost = cost;
+          deltaCost = cost - currentCost;
+          if ( deltaCost <= 0.0 ) { //zippydebug tried < 0.0
+            if ( deltaCost == 0.0 ) {
+              zeroDeltas += 1;
             }
-            if ( ( myRank == 0 ) && ( step == 100 ) && ( currentCost == 1.0 ) ) { //zippydebug
-              cout << "DEBUG: cost=1.0 dc>0 rank " << myRank << " myPermRank " << myPermRank << " moveType="
-                   << moveType << std::scientific << std::setprecision(8) << " diceRoll=" << diceRoll << " threshold=" << threshold << " deltaCost="
-                   << deltaCost << endl;
-            }
+            tour = newTour;
+            currentCost = cost;
           } else {
-            // cout << "DEBUG rank " << myRank << "cost=" << cost << endl;
+            if ( cost > 0.0 ) { //addedFor2WayPar
+              double diceRoll = unif( re );
+              double threshold = exp( -fabs( deltaCost )/( kMultiplier * t ) );
+              if ( diceRoll < threshold ) {
+                acceptedBads += 1;
+                tour = newTour;
+                currentCost = cost;
+              }
+            }
           }
         }
       }
@@ -999,7 +992,24 @@ bool hcp( HCPGraph& g_, HCPParameters& config_, ostream& outy_, int trial_, MPI_
       // Find the minimum-cost of all the ranks' tours and reset all to that:
       inS[0].d = currentCost;
       double costHere = currentCost;
-      mpiError = MPI_Allreduce( inS, outS, 1, MPI_DOUBLE_INT, MPI_MINLOC, trialComm_ );
+      // zippy: try shaking it up sometimes:
+      // double diceRoll2 = unif( re );
+      // double threshold = 1.0e-2;
+      // double diceRoll3 = 0.0;
+      // mpiError = MPI_Allreduce( &diceRoll2, &diceRoll3, 1, MPI_DOUBLE, MPI_MIN, trialComm_ );
+      // if ( (myRank==0) || (myRank==1) || (myRank==16) ) {
+      //   cout << "debug: shake it up: rank " << myRank << " diceRoll3=" << diceRoll3 << endl;
+      // }
+      // if ( diceRoll3 < threshold ) {
+      //   acceptedBads += 1;
+      //   mpiError = MPI_Allreduce( inS, outS, 1, MPI_DOUBLE_INT, MPI_MAXLOC, trialComm_ );
+      //   double cc = outS[0].d;
+      //   cout << "debug: bad max accepted (shake it up): rank " << myRank << " currentCost=" << currentCost << " cc=" << cc
+      //        << " diceRoll2=" << diceRoll2 << " diceRoll3=" << diceRoll3 << " myPermRank=" << myPermRank << " trial_="
+      //        << trial_ << endl;
+      // } else {
+        mpiError = MPI_Allreduce( inS, outS, 1, MPI_DOUBLE_INT, MPI_MINLOC, trialComm_ );
+      // }
       currentCost = outS[0].d;
       cost = currentCost;
       newTour = tour; //zippy: maybe this will fix the bug...
