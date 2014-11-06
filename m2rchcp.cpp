@@ -65,8 +65,9 @@ public:
   
   void addRandomEdges( int nEdges_, int seed_, double weight_ )
   {
-    std::seed_seq seq{1 + seed_, 2 + seed_, 3 + seed_, 4 + seed_, 5 + seed_, N_m + seed_ };
-    std::mt19937 gen(seq);
+    //trySomethingDifferentInDesperation std::seed_seq seq{1 + seed_, 2 + seed_, 3 + seed_, 4 + seed_, 5 + seed_, N_m + seed_ };
+    //trySomethingDifferentInDesperation std::mt19937 gen(seq);
+    std::mt19937 gen(seed_);
     std::uniform_int_distribution<> dis( 0, N_m - 1 );
 
     int startNode, endNode;
@@ -354,20 +355,16 @@ void lkTransport( Tour_t& tour_, Tour_t& newTour_, int L_,
   // Pick pair of locations (A,B) with B>A, a third location C, and insert the 
   // segment A->B after location C [Lin-Kernighan "transport" move from TSP]
   // L = len( tour_ )
-  fill( newTour_.begin(), newTour_.end(), 0 );
+  // fill( newTour_.begin(), newTour_.end(), 0 ); // nuke this
 
-  // Pick two distinctg nodes at random:
-  // int range = L_;
+  // Pick two distinct nodes at random:
   int node1, node2;
-  // node1 = rand() % range;
   node1 = pickNodes_( pickNodesGen_ );
   do {
-    // node2 = rand() % range;
     node2 = pickNodes_( pickNodesGen_ );
   } while ( node2 == node1 );
   int locAIndex = node1;
   int locBIndex = node2;
-  // Third location; moved segment will be inserted between this and the next location:
   if ( locBIndex < locAIndex ) {
     int tempIndex = locAIndex;
     locAIndex = locBIndex;
@@ -383,11 +380,10 @@ void lkTransport( Tour_t& tour_, Tour_t& newTour_, int L_,
       coinFlip = 0;
     }
   }
-  // range = L_;
-  // int locCIndex = rand() % range;
+
+  // Third location; moved segment will be inserted between this and the next location:
   int locCIndex = pickNodes_( pickNodesGen_ );
   while ( ( locCIndex >= locAIndex ) and ( locCIndex <= locBIndex ) ) {
-    // locCIndex = locCIndex = rand() % range;
     locCIndex = pickNodes_( pickNodesGen_ );
   }
   if ( locCIndex > locBIndex ) {
@@ -423,14 +419,11 @@ void swap( Tour_t& tour_, Tour_t& newTour_, int L_,
            uniform_int_distribution<int>& pickNodes_, minstd_rand& pickNodesGen_ )
 {
   // Swap two locations in the tour:
-  for ( int ii = 0; ii < L_; ii++ ) { newTour_[ ii ] = tour_[ ii ]; }
+  // for ( int ii = 0; ii < L_; ii++ ) { newTour_[ ii ] = tour_[ ii ]; } // not needed, already done in hcp()
   // Pick two (different) locations at random:
-  //int range = L_;
   int node1, node2;
-  // node1 = rand() % range;
   node1 = pickNodes_( pickNodesGen_ );
   do {
-    // node2 = rand() % range;
     node2 = pickNodes_( pickNodesGen_ );
   } while ( node2 == node1 );
   // Swap the locations:
@@ -449,11 +442,6 @@ int move( Tour_t& tour_, Tour_t& newTour_, long int permutation_, int L_,
     swap( tour_, newTour_, L_, pickNodes_, pickNodesGen_ );
     return 2;
   }
-  // if ( permutation_ & 1 ) {
-  //   swap( tour_, newTour_, L_, pickNodes_, pickNodesGen_ );
-  // } else {
-  //   lkTransport( tour_, newTour_, L_, pickNodes_, pickNodesGen_ );
-  // }
   return 3;
 }
 
@@ -682,6 +670,8 @@ void sweep( int N_, string& inputFileName_ )
     double multiplier = minMultiplier + m * deltaMultiplier;
     int M = int( multiplier * NLogN );
     // if ( ( M % 2 ) == 0 ) { M++; } //zippy try always odd.
+    // if ( M == 572 ) { M = 571; } // zippy hack
+    M++; //zippy hack
     // int randomGraphSeed = multiplier;
     int randomGraphSeed = M;
     HCPGraph g( N_ );
@@ -885,7 +875,8 @@ bool hcp( HCPGraph& g_, HCPParameters& config_, ostream& outy_, int trial_, MPI_
   // }
 
   // Try eliminating modulo and rand() in moves functions
-  minstd_rand pickNodesGen( trial_ + 3377 * myPermRank ); // ???RIGHT?
+//  minstd_rand pickNodesGen( trial_ + 3377 * myPermRank ); // ???RIGHT?
+  minstd_rand pickNodesGen( trial_ + 3377 * myPermRank + myPermRank ); // try this
   uniform_int_distribution<int> pickNodes( 0, ( n - 1 ) );
 
   double currentCost = costFunction( g_, tour, false );
