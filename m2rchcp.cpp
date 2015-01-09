@@ -128,6 +128,79 @@ public:
     if ( myRank_ == 0 ) { cout << "debug rank " << myRank_ << ":: random tour = " << tour << endl; }
   }
 
+  void writeRandomEdges( long long int seed_, std::ostream& outy_, long long int myRank_ )
+  {
+    std::mt19937_64 gen( seed_ );
+    long long int nE = nEdges();
+    std::uniform_int_distribution<long long int> dis( 0, nE - 1 );
+
+    long long int randomEdge;
+    long long int startNode, endNode;
+    vector< long long int > edgesChosen;
+
+    //zippyWrong? for ( int edge = 0; edge < ( N_m + 1 ); edge++ ) {
+    for ( int edge = 0; edge < N_m; edge++ ) {
+      do {
+        randomEdge = dis( gen );
+      } while ( find( edgesChosen.begin(), edgesChosen.end(), randomEdge ) != edgesChosen.end() );
+    }
+
+    if ( myRank_ == 0 ) {
+      cout << "debug rank " << myRank_ << ":: random edges = [ ";
+      //zippyWrong? for ( int edge = 0; edge < ( N_m + 1 ); edge++ ) {
+      for ( int edge = 0; edge < N_m; edge++ ) {
+        startNode = compactGraph_m[ edge ].first;
+        endNode = compactGraph_m[ edge ].second;
+        double weight = getWeight( startNode, endNode );
+        cout << "(" << startNode << ", " << endNode << ", weight: " << weight << "), ";
+      }
+      // cout << " ]" << endl;
+      cout << " ]";
+
+      // Quick and dirty solution for parsing this back in: just write out the
+      // start and end node of every edge:
+      cout << "{";
+      for ( int edge = 0; edge < N_m; edge++ ) {
+        startNode = compactGraph_m[ edge ].first;
+        endNode = compactGraph_m[ edge ].second;
+        cout << " " << startNode << " " << endNode;
+      }
+      cout << " }" << endl;
+    }
+
+    // long long int randomEdge;
+    // long long int startNode, endNode, nEdgesChosen = 0;
+    // vector< long long int > edgesChosen;
+    // bool edgeChosen;
+    // while ( long long int edge = 0; edge < nE; edge++ ) {
+    //   randomEdge = dis( gen );
+    //   startNode = compactGraph_m[ randomEdge ].first;
+    //   endNode = compactGraph_m[ randomEdge ].second;
+    //   edgeChosen = false;
+    //   while ( ( getWeight( startNode, endNode ) == 1.0 ) && ( edgesChosen.find( randomEdge ) != edgesChosen.end() ) ) {
+    //     randomEdge = dis( gen );
+    //     startNode = compactGraph_m[ randomEdge ].first;
+    //     endNode = compactGraph_m[ randomEdge ].second;
+    //     do { endNode = dis( gen ); } while ( endNode == startNode );
+    //     if ( ! hasEdge( startNode, endNode ) ) {
+    //       addEdge( startNode, endNode, weight_ );
+    //       acceptedEdge = true;
+    //     }
+    //   }
+    // }
+
+    // // Generate and write out a random tour. Overlap with this will be
+    // // compared against overlap with the inserted cycle tour.
+    // std::seed_seq seq{1 + seed_, 2 + seed_, 3 + seed_, 4 + seed_, 5 + seed_, N_m + seed_ };
+    // std::mt19937_64 shuffleGen( seq );
+    // Tour_t tour( N_m );
+    // for ( long long int ii = 0; ii < N_m; ii++ ) {
+    //   tour[ ii ] = ii;
+    // }
+    // shuffle( &tour[ 0 ], &tour[ N_m ], shuffleGen );
+    // if ( myRank_ == 0 ) { cout << "debug rank " << myRank_ << ":: random tour = " << tour << endl; }
+  }
+
   void insertFakeEdges( long long int nFakeEdges_, double fakeEdgeWeight_, long long int randomGraphSeed_ )
   {
     long long int seedForFakes = ( randomGraphSeed_ + 1 ) * 2;
@@ -383,13 +456,13 @@ void swap( Tour_t& tour_, Tour_t& newTour_, long long int L_,
 bool moveOneEverywhere( Tour_t& tour_, Tour_t& newTour_, long long int L_, HCPGraph& g_, long long int myRank_,
                         long long int myTrialRank_)
 {
-  // Take the first nonzero-weight edge in the tour, and move that edge's
-  // first endpoint to all other possible locations in the tour, to see if the
-  // cost can be reduced by weight. Typically, all weights are 1.0, so this is
-  // attempting to reduce the cost function of the tour by 1.0. The motivation
-  // for this little sub-algorithm is to handle cases where the total cost of
-  // a tour has been reduced to exactly 1.0. This is a quick way to try to get
-  // the cost all the way to 0.0 (thus finding a HC).
+  // Take the first nonzero-weight edge in the tour, and move that edge's two
+  // endpoints to all other possible locations in the tour, to see if the cost
+  // can be reduced by weight. (~N^2 possibilities.) Typically, all weights
+  // are 1.0, so this is attempting to reduce the cost function of the tour by
+  // 1.0. The motivation for this little sub-algorithm is to handle cases
+  // where the total cost of a tour has been reduced to exactly 1.0. This is a
+  // quick way to try to get the cost all the way to 0.0 (thus finding a HC).
 
   if ( myTrialRank_ == 0 ) {
     cout << "myRank_ =" << myRank_ << " myTrialRank_ =" << myTrialRank_ << " trying moveOneEverywhere()" << endl;
@@ -427,35 +500,37 @@ bool moveOneEverywhere( Tour_t& tour_, Tour_t& newTour_, long long int L_, HCPGr
     secondNodeLoc = firstNodeLoc + 1;
   }
 
-  // Try moving 1st node around:
   double oldCost = costFunction( g_, tour_, false );
-  for ( long long int position = 0; position < L_; position++ ) {
+  long long int firstNode = tour_[ firstNodeLoc ];
+  long long int secondNode = tour_[ secondNodeLoc ];
+  long long int combinationsTried = 0;
+  for ( long long int position1 = 0; position1 < ( L_ - 2 ); position1++ ) {
     newTour_ = tour_;
-    newTour_.erase( newTour_.begin() + firstNodeLoc );
-    newTour_.insert( ( newTour_.begin() + position ), tour_[ firstNodeLoc ] );
-    double cost = costFunction( g_, newTour_, false );
-    if ( cost < oldCost ) {
-      if ( myTrialRank_ == 0 ) {
-        cout << "moveOneEverywhere: found cost = " << cost << " ; former cost was " << oldCost << endl;
+    if ( secondNodeLoc == 0 ) {
+      newTour_.erase( newTour_.begin() + secondNodeLoc );
+      newTour_.erase( newTour_.begin() + firstNodeLoc - 1 );
+    } else {
+      newTour_.erase( newTour_.begin() + firstNodeLoc );
+      newTour_.erase( newTour_.begin() + secondNodeLoc - 1 );
+    }
+    newTour_.insert( ( newTour_.begin() + position1 ), firstNode );
+    for ( long long int position2 = 0; position2 < ( L_ - 1 ); position2++ ) {
+      newTour_.insert( ( newTour_.begin() + position2 ), secondNode );
+      double cost = costFunction( g_, newTour_, false );
+      combinationsTried++;
+      if ( cost < oldCost ) {
+        if ( myTrialRank_ == 0 ) {
+          cout << "moveOneEverywhere: found cost = " << cost << " ; former cost was " << oldCost << endl;
+        }
+        return true;
       }
-      return true;
     }
   }
 
-  // Try moving 2nd node around:
-  for ( long long int position = 0; position < L_; position++ ) {
-    newTour_ = tour_;
-    newTour_.erase( newTour_.begin() + secondNodeLoc );
-    newTour_.insert( ( newTour_.begin() + position ), tour_[ secondNodeLoc ] );
-    double cost = costFunction( g_, newTour_, false );
-    if ( cost < oldCost ) {
-      if ( myTrialRank_ == 0 ) {
-        cout << "moveOneEverywhere: found cost = " << cost << " ; former cost was " << oldCost << endl;
-      }
-      return true;
-    }
+  if ( myTrialRank_ == 0 ) {
+    cout << "DEBUG: moveOneEverywhere: myRank_ =" << myRank_ << " myTrialRank_ =" << myTrialRank_ << "firstNode = " << firstNode
+         << " secondNode =  " << secondNode << " tried " << combinationsTried << " combinations" << endl;
   }
-
   return false;
 }
 
@@ -670,6 +745,7 @@ void sweep( long long int N_, string& inputFileName_ )
 
     long long int nRandomTourSeed = randomGraphSeed + 222333444555;
     g.writeRandomTour( nRandomTourSeed, outy, myRank );
+    g.writeRandomEdges( nRandomTourSeed, outy, myRank );
 
     if ( nFakeEdgesMultiplier > 0.0 ) { nFakeEdges = (long long int)( nFakeEdgesMultiplier * NLogN ); }
     if ( myRank == 0 ) {
@@ -945,6 +1021,7 @@ bool hcp( HCPGraph& g_, HCPParameters& config_, ostream& outy_, long long int tr
             }
             tour = newTour;
             currentCost = cost;
+            triedMoveOneEverywhere = false;
           } else {
             if ( cost > 0.0 ) { //addedFor2WayPar
               double diceRoll = unif( re );
@@ -954,6 +1031,7 @@ bool hcp( HCPGraph& g_, HCPParameters& config_, ostream& outy_, long long int tr
                 tour = newTour;
                 currentCost = cost;
               }
+              triedMoveOneEverywhere = false;
             }
           }
         }
@@ -970,10 +1048,10 @@ bool hcp( HCPGraph& g_, HCPParameters& config_, ostream& outy_, long long int tr
       mpiError = MPI_Bcast( &newTour[0], n, MPI_LONG_LONG, outS[0].i, trialComm_ );
       tour = newTour;
       if ( ( cost == 1.0 ) && !triedMoveOneEverywhere ) { // try special algorithm if cost = 1.0
-        if ( moveOneEverywhere( tour, newTour, n, g_, myRank, myPermRank ) ) {
-          tour = newTour;
-          cost = costFunction( g_, tour, false );
-        }
+        // if ( moveOneEverywhere( tour, newTour, n, g_, myRank, myPermRank ) ) {
+        //   tour = newTour;
+        //   cost = costFunction( g_, tour, false );
+        // }
         triedMoveOneEverywhere = true;
       }
       if ( cost == 0.0 ) {
