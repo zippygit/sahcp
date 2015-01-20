@@ -778,8 +778,14 @@ void sweep( long long int N_, string& inputFileName_ )
     mpiError = MPI_Comm_size( trialComm, &nRanksPerTrialTest );
     mpiError = MPI_Comm_rank( trialComm, &myTrialRank );
     if ( nRanksPerTrialTest != nRanksPerTrial ) {
-      cerr << "Error in configuration. nRanksPerTrialTest=" << nRanksPerTrialTest
-           << " but nRanksPerTrial=" << nRanksPerTrial << endl;
+      cerr.flush();
+      if ( myRank == 0 ) {
+        cerr << "Error in configuration. nRanksPerTrialTest=" << nRanksPerTrialTest
+             << " but nRanksPerTrial=" << nRanksPerTrial << endl;
+        cerr.flush();
+      }
+      mpiError = MPI_Barrier( MPI_COMM_WORLD );
+      cerr.flush();
       MPI_Abort( MPI_COMM_WORLD, 3737 );
     }
     for ( long long int rank = 0; rank < nRanks; rank++ ) {
@@ -795,7 +801,11 @@ void sweep( long long int N_, string& inputFileName_ )
     for ( long long int rnk = 0; rnk < nRanks; rnk++ ) {
       if ( myRank == rnk ) {
         if ( myTrialRank != key ) {
-          cerr << "Error in configuration. myTrialRank=" << myTrialRank << " but key=" << key << endl;
+          cerr.flush();
+          if ( myRank == 0 ) {
+            cerr << "Error in configuration. myTrialRank=" << myTrialRank << " but key=" << key << endl;
+          }
+          cerr.flush();
           die = true;
         }
       }
