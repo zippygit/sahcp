@@ -714,6 +714,9 @@ void sweep( long long int N_, string& inputFileName_ )
     double dNLogN = N_ * log( N_ );
     double randRoads = multiplier * dNLogN;
     M = (long long int)( randRoads );
+    if ( insertRandomCycle ) {
+      M -= N_;
+    }
     //zippy hack.
     // M++; //zippy hack
     // long long int randomGraphSeed = multiplier;
